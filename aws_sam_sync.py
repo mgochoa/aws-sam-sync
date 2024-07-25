@@ -2,6 +2,7 @@ import os
 
 import boto3
 import click
+from InquirerPy import inquirer
 from botocore.exceptions import ClientError, ProfileNotFound
 from git import Repo
 from mypy_boto3_cloudformation.client import CloudFormationClient
@@ -27,15 +28,15 @@ def get_cloudformation_stacks(cloudformation_client: CloudFormationClient) -> li
     return stacks
 
 
-def get_closest_stack_name(stacks: list[StackSummaryTypeDef], partial_stack_name: str) -> str:
+def get_closest_stacks_names(stacks: list[StackSummaryTypeDef], partial_stack_name: str) -> list[str]:
     """Find the shortest and closest stack name"""
     possible_stacks = []
     for stack in stacks:
-        if partial_stack_name in stack["StackName"]:
+        if partial_stack_name.casefold() in stack["StackName"].casefold():
             possible_stacks.append(stack["StackName"])
     if not possible_stacks:
         raise NotEnoughCloudformationStacks("There is not enough matching cloudformation stacks to compare.")
-    return min(possible_stacks, key=len)
+    return possible_stacks
 
 
 class NotExistingRepo(Exception):
@@ -76,7 +77,7 @@ def error(message: str):
 @click.option("--build-image")
 @click.option("--region")
 @click.option("--profile")
-def cli(*,build_image=None, profile=None, region="eu-central-1"):
+def cli(*, build_image=None, profile=None, region="eu-central-1"):
     click.clear()
     try:
         cb = current_branch()
@@ -93,12 +94,20 @@ def cli(*,build_image=None, profile=None, region="eu-central-1"):
         exit(0)
     success("Done!")
     try:
-        stack_name = get_closest_stack_name(cloudformation_stacks, cb)
+        closest_stacks_names = get_closest_stacks_names(cloudformation_stacks, cb)
     except NotEnoughCloudformationStacks as ne:
         error(str(ne))
         exit(0)
+    confirm = False
+    selected_stack_name = None
+    while not confirm:
+        selected_stack_name = inquirer.select(
+            message="Select stack:",
+            choices=closest_stacks_names
+        ).execute()
+        confirm = inquirer.confirm(message="Confirm?").execute()
     info("Starting sam sync...")
-    sam_sync(stack_name, profile, build_image)
+    sam_sync(selected_stack_name, profile, build_image)
 
 
 if __name__ == "__main__":

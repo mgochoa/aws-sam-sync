@@ -7,7 +7,8 @@ setup(
     install_requires=[
         'Click',
         'GitPython',
-        'boto3'
+        'boto3',
+        'InquirerPy'
     ],
     entry_points={
         'console_scripts': [
