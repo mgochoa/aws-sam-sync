@@ -19,7 +19,7 @@ def get_cloudformation_stacks(cloudformation_client: CloudFormationClient) -> li
     stacks = []
     response = cloudformation_client.list_stacks()
     stacks.extend(response["StackSummaries"])
-    next_token = response["NextToken"]
+    next_token = response.get("NextToken")
     while next_token:
         cloudformation_client.list_stacks(NextToken=next_token)
         stacks.extend(response["StackSummaries"])
@@ -33,10 +33,16 @@ def get_closest_stack_name(stacks: list[StackSummaryTypeDef], partial_stack_name
     for stack in stacks:
         if partial_stack_name in stack["StackName"]:
             possible_stacks.append(stack["StackName"])
+    if not possible_stacks:
+        raise NotEnoughCloudformationStacks("There is not enough matching cloudformation stacks to compare.")
     return min(possible_stacks, key=len)
 
 
 class NotExistingRepo(Exception):
+    pass
+
+
+class NotEnoughCloudformationStacks(Exception):
     pass
 
 
@@ -70,7 +76,7 @@ def error(message: str):
 @click.option("--build-image")
 @click.option("--region")
 @click.option("--profile")
-def cli(build_image=None, profile=None, region="eu-central-1"):
+def cli(*,build_image=None, profile=None, region="eu-central-1"):
     click.clear()
     try:
         cb = current_branch()
@@ -86,6 +92,14 @@ def cli(build_image=None, profile=None, region="eu-central-1"):
         error(str(e))
         exit(0)
     success("Done!")
-    stack_name = get_closest_stack_name(cloudformation_stacks, cb)
+    try:
+        stack_name = get_closest_stack_name(cloudformation_stacks, cb)
+    except NotEnoughCloudformationStacks as ne:
+        error(str(ne))
+        exit(0)
     info("Starting sam sync...")
     sam_sync(stack_name, profile, build_image)
+
+
+if __name__ == "__main__":
+    cli()
